@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from lxml import etree
 
+from internet_channels import serp_results, social_page, threads_results
 from internet_search import brave_results, classify_pages, discovery_queries, openai_sources
 from internet_sources import Fetcher, brand_mentions, canonical, duplicate_group, feed_links, index_links, normalize, parse_page
 
@@ -40,7 +41,8 @@ META = (
     "Учтены только страницы, на которых подтверждено упоминание бренда.",
     "Обнаружено — дата первого сбора. Дата публикации заполняется по данным страницы.",
     "Группа объединяет одинаковые и близкие тексты. Метрики упоминаний считаются по уникальным группам.",
-    "Позиции Brave Search и импортированной выдачи относятся к указанному поисковому провайдеру.",
+    "Позиции Brave Search, Google / Яндекс через SerpApi и импортированной выдачи относятся к указанному провайдеру и региону.",
+    "Threads API и поиск индексируемых постов дают частичную выборку, а не все упоминания платформы.",
     "Порядок найденных источников OpenAI не является позицией в поисковой выдаче.",
     "Новая строка ассортимента означает первое наблюдение источника; дату вывода продукта нужно проверить.",
 )
@@ -129,6 +131,33 @@ def load_config(path=ROOT / "internet_config.json", comparison=None):
         source["url"] = canonical(source["url"])
         if source["kind"] not in {"page", "index", "feed"} or not set(source["brands"]) <= names:
             raise ValueError("Источник содержит неизвестные бренды или тип")
+    providers = config.setdefault("search_providers", ["auto"])
+    if (not isinstance(providers, list) or not providers or len(set(providers)) != len(providers)
+            or not set(providers) <= {"auto", "google", "yandex"}):
+        raise ValueError("Неизвестные или повторяющиеся поисковые провайдеры")
+    channels = config.setdefault("channels", [])
+    if not isinstance(channels, list) or len(channels) > 30:
+        raise ValueError("Допускается до 30 групп интернет-источников")
+    for channel in channels:
+        if (not isinstance(channel["name"], str) or not channel["name"].strip()
+                or channel["category"] not in {"Соцсети", "Отраслевые СМИ"}
+                or not isinstance(channel["domains"], list) or not channel["domains"]):
+            raise ValueError("Некорректная группа источников")
+        for domain in channel["domains"]:
+            if (not isinstance(domain, str)
+                    or canonical("https://" + domain + "/") != "https://" + domain + "/"
+                    or urlsplit("https://" + domain).hostname != domain):
+                raise ValueError("Нужен домен без пути и параметров")
+    for field, default, maximum in (("max_threads_queries", 2, 8), ("threads_posts_per_query", 20, 50)):
+        value = config.setdefault(field, default)
+        if type(value) is not int or not 1 <= value <= maximum:
+            raise ValueError(f"Некорректное ограничение {field}")
+    location = config.get("google_location")
+    if location is not None and (not isinstance(location, str) or not 1 <= len(location) <= 150):
+        raise ValueError("Неверное название региона Google")
+    region_id = config.get("yandex_region_id")
+    if region_id is not None and (type(region_id) is not int or region_id < 1):
+        raise ValueError("Неверный код региона Яндекса")
     config["all_brands"] = brands
     return config
 
@@ -232,37 +261,91 @@ def collect(config, database, api_key=None, use_search=True, no_ai=False, url_im
 
 def _collect(db, config, sources, api_key, use_search, no_ai):
     brands = config["all_brands"]
-    found = list(sources)
+    from itertools import zip_longest
+    discovered = []
     region = f"{config['country']} / {config['city']}"
     key = None if no_ai else (api_key or os.getenv("OPENAI_API_KEY", "")).strip()
     if use_search:
-        queries = discovery_queries(brands)
-        state = db.execute("SELECT value FROM web_state WHERE key='query_cursor'").fetchone()
+        queries = discovery_queries(brands, config.get("channels", []))
+        state = db.execute("SELECT value FROM web_state WHERE key='query_cursor_v2'").fetchone()
         cursor = int(state["value"]) if state else 0
-        attempts = min(config["max_discovery_queries"], len(queries))
-        if not key and not os.getenv("BRAVE_SEARCH_API_KEY"):
-            diagnostic(db, "", "info", "Для поиска новых внешних страниц нужен OPENAI_API_KEY либо BRAVE_SEARCH_API_KEY.")
-            attempts = 0
+        configured = config.get("search_providers", ["auto"])
+        providers = []
+        for provider in configured:
+            if provider == "auto" and (key or os.getenv("BRAVE_SEARCH_API_KEY")):
+                providers.append(provider)
+            elif provider in {"google", "yandex"} and os.getenv("SERPAPI_API_KEY"):
+                providers.append(provider)
+        if not providers:
+            diagnostic(db, "", "info", "API-поиск отключён: нужны OPENAI_API_KEY, BRAVE_SEARCH_API_KEY или SERPAPI_API_KEY.")
+        if set(configured) & {"google", "yandex"} and not os.getenv("SERPAPI_API_KEY"):
+            diagnostic(db, "", "info", "Google / Яндекс через SerpApi не подключены: задайте SERPAPI_API_KEY.")
+        attempts = min(config["max_discovery_queries"], len(queries)) if providers else 0
+        provider_state = db.execute("SELECT value FROM web_state WHERE key='provider_cursor'").fetchone()
+        provider_cursor = int(provider_state["value"]) if provider_state else 0
+        batches = []
         for index in range(attempts):
             brand, query = queries[(cursor + index) % len(queries)]
+            selected = providers[(provider_cursor + index) % len(providers)]
             stamp = utc_now()
             try:
-                if os.getenv("BRAVE_SEARCH_API_KEY"):
+                search_region = region
+                if selected in {"google", "yandex"}:
+                    rows, depth = serp_results(query, os.environ["SERPAPI_API_KEY"], selected,
+                                              config["country"], config["city"], config.get("yandex_region_id"),
+                                              config.get("google_location"))
+                    provider = ("Google" if selected == "google" else "Яндекс") + " / SerpApi"
+                    if selected == "google":
+                        search_region = "Google: " + (config.get("google_location") or region)
+                    if selected == "yandex":
+                        search_region = "Яндекс lr=" + str(config.get("yandex_region_id") or "по умолчанию")
+                elif os.getenv("BRAVE_SEARCH_API_KEY"):
                     rows, depth = brave_results(query, os.environ["BRAVE_SEARCH_API_KEY"], config["country"])
                     provider = "Brave Search"
                 else:
                     rows = openai_sources(query, key, config["city"], config["country"])
                     depth, provider = None, "OpenAI web search"
-                save_search(db, provider, query, region, stamp, brand, rows, depth)
-                found.extend({"url": row["url"], "brands": [brand], "kind": "page"} for row in rows)
+                save_search(db, provider, query, search_region, stamp, brand, rows, depth)
+                batches.append([{"url": row["url"], "brands": [brand], "kind": "page"} for row in rows])
                 diagnostic(db, "", "ok", f"{provider}: {query}. Найдено ссылок: {len(rows)}.")
             except (OSError, ValueError, KeyError, TypeError) as error:
                 diagnostic(db, "", "error", f"Поиск {query}: {error}")
+        discovered = [source for batch in zip_longest(*batches) for source in batch if source is not None]
         with db:
-            db.execute("INSERT OR REPLACE INTO web_state VALUES('query_cursor',?)",
-                       (str((cursor + attempts) % len(queries)),))
+            db.execute("INSERT OR REPLACE INTO web_state VALUES('query_cursor_v2',?)", (str(cursor + attempts),))
+            db.execute("INSERT OR REPLACE INTO web_state VALUES('provider_cursor',?)", (str(provider_cursor + attempts),))
+        token = os.getenv("THREADS_ACCESS_TOKEN", "").strip()
+        if token and config.get("threads_enabled", True):
+            social_discoveries = []
+            state = db.execute("SELECT value FROM web_state WHERE key='threads_cursor'").fetchone()
+            cursor = int(state["value"]) if state else 0
+            terms = [term for batch in zip_longest(*[
+                [(b["name"], alias) for alias in dict.fromkeys(b["aliases"])] for b in brands
+            ]) for term in batch if term is not None]
+            attempts = min(config.get("max_threads_queries", 2), len(terms))
+            for index in range(attempts):
+                brand, term = terms[(cursor + index) % len(terms)]
+                try:
+                    posts = threads_results(term, token, config.get("threads_posts_per_query", 20))
+                    social_discoveries.extend({"url": row["url"], "brands": [brand], "kind": "page", "api_post": row}
+                                      for row in posts)
+                    diagnostic(db, "", "ok", f"Threads API: {term}. Получено постов: {len(posts)}. Это не полное покрытие платформы.")
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    diagnostic(db, "", "error", f"Threads API: {error}")
+            discovered = [source for pair in zip_longest(discovered, social_discoveries)
+                          for source in pair if source is not None]
+            with db:
+                db.execute("INSERT OR REPLACE INTO web_state VALUES('threads_cursor',?)", (str(cursor + attempts),))
+        elif not token:
+            diagnostic(db, "", "info", "Threads: поиск индексируемых ссылок; для прямого API задайте THREADS_ACCESS_TOKEN с одобренным threads_keyword_search.")
 
-    queue = deque(found)
+    # Mix seed sites and new discoveries so a long source list cannot consume the entire page budget.
+    seed_state = db.execute("SELECT value FROM web_state WHERE key='seed_cursor'").fetchone()
+    seed_cursor = (int(seed_state["value"]) if seed_state else 0) % max(1, len(sources))
+    ordered_seeds = sources[seed_cursor:] + sources[:seed_cursor]
+    queue = deque(source for pair in zip_longest(ordered_seeds, discovered) for source in pair if source is not None)
+    seed_urls = {source["url"] for source in ordered_seeds}
+    seeds_checked = set()
     fetcher = Fetcher(config["request_timeout"], config["request_delay"])
     visited, pages = set(), []
     prior = [dict(json.loads(row["data"]), group_id=row["group_id"], content_hash=row["content_hash"])
@@ -273,17 +356,23 @@ def _collect(db, config, sources, api_key, use_search, no_ai):
         if url in visited:
             continue
         visited.add(url)
+        if url in seed_urls:
+            seeds_checked.add(url)
         try:
-            final_url, raw = fetcher.get(url)
-            if source["kind"] == "feed":
-                queue.extend({"url": link, "brands": source["brands"], "kind": "page"}
-                             for link in feed_links(final_url, raw, config["max_pages"]))
-                diagnostic(db, url, "ok", "Лента или карта сайта обработана")
-                continue
-            if source["kind"] == "index":
-                queue.extend({"url": link, "brands": source["brands"], "kind": "page"}
-                             for link in index_links(final_url, raw, brands, 5))
-            page = parse_page(final_url, raw, brands)
+            if "api_post" in source:
+                page = social_page(source["api_post"], brands)
+                final_url = page["url"]
+            else:
+                final_url, raw = fetcher.get(url)
+                if source["kind"] == "feed":
+                    queue.extend({"url": link, "brands": source["brands"], "kind": "page"}
+                                 for link in feed_links(final_url, raw, config["max_pages"]))
+                    diagnostic(db, url, "ok", "Лента или карта сайта обработана")
+                    continue
+                if source["kind"] == "index":
+                    queue.extend({"url": link, "brands": source["brands"], "kind": "page"}
+                                 for link in index_links(final_url, raw, brands, 5))
+                page = parse_page(final_url, raw, brands)
             if final_url in {entry["url"] for entry in pages}:
                 continue
             group, content_hash = duplicate_group(page, prior + pages)
@@ -308,9 +397,13 @@ def _collect(db, config, sources, api_key, use_search, no_ai):
                         """, (name, product["name"], product["url"], first, stamp, json.dumps(product, ensure_ascii=False)))
             diagnostic(db, final_url, "ok", f"Бренды: {', '.join(page['brands'])}. Материал сохранён.")
         except (OSError, ValueError, TypeError, KeyError, UnicodeError, etree.Error) as error:
-            diagnostic(db, url, "error", str(error))
+            status = "info" if isinstance(error, ValueError) and str(error).startswith("Упоминание выбранных брендов") else "error"
+            diagnostic(db, url, status, str(error))
+    with db:
+        db.execute("INSERT OR REPLACE INTO web_state VALUES('seed_cursor',?)",
+                   (str((seed_cursor + len(seeds_checked)) % max(1, len(sources))),))
     if queue:
-        diagnostic(db, "", "info", f"Достигнут лимит страниц за запуск: {config['max_pages']}.")
+        diagnostic(db, "", "info", f"Достигнут лимит страниц за запуск: {config['max_pages']}. Остальные источники — в следующих запусках.")
     try:
         classify_pages(db, pages, key)
     except (OSError, ValueError, TypeError, KeyError):
@@ -371,7 +464,7 @@ def snapshot(db, config):
                     continue
                 question_seen.add(key)
                 questions[name].add(normalize(question))
-                result["Вопросы покупателей"].append([name, question, "Опубликованный вопрос / FAQ",
+                result["Вопросы покупателей"].append([name, question, "Пост Threads" if page.get("origin") == "Threads API" else "Опубликованный вопрос / FAQ",
                                                        stored["first_seen"], page["url"]])
             for offer in page["advertisements"]:
                 if name not in brand_mentions(offer, config["all_brands"]):

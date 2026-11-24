@@ -62,6 +62,84 @@
   "comparison_brands": [],
   "sources": [
     {
+      "url": "https://pharmvestnik.ru/companies/OOO-Selvim.html",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://pharmvestnik.ru/content/articles/Selvim-rasshiryaet-proizvodstvo-preparata-Galavit.html",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://pharmmedprom.ru/news/rossiiskie-proizvoditeli-predstavili-svoi-luchshie-narabotki-na-forume-mat-i-ditya/",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://remedium.ru/doctor/therapeutics/immunomodulyatory-i-printsipy-ikh-primeneniya/",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://pharmvestnik.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://vademec.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://remedium.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://www.katrenstyle.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://pharmmedprom.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
       "url": "https://www.galavit.ru/",
       "brands": [
         "Галавит"
@@ -178,5 +256,59 @@
       ],
       "kind": "page"
     }
-  ]
+  ],
+  "search_providers": [
+    "auto",
+    "google",
+    "yandex"
+  ],
+  "yandex_region_id": 213,
+  "max_threads_queries": 2,
+  "threads_posts_per_query": 20,
+  "channels": [
+    {
+      "name": "Threads",
+      "category": "Соцсети",
+      "domains": [
+        "threads.com",
+        "threads.net"
+      ]
+    },
+    {
+      "name": "Фармвестник",
+      "category": "Отраслевые СМИ",
+      "domains": [
+        "pharmvestnik.ru"
+      ]
+    },
+    {
+      "name": "Vademecum",
+      "category": "Отраслевые СМИ",
+      "domains": [
+        "vademec.ru"
+      ]
+    },
+    {
+      "name": "Remedium",
+      "category": "Отраслевые СМИ",
+      "domains": [
+        "remedium.ru"
+      ]
+    },
+    {
+      "name": "Катрен Стиль",
+      "category": "Отраслевые СМИ",
+      "domains": [
+        "katrenstyle.ru"
+      ]
+    },
+    {
+      "name": "ФармМедПром",
+      "category": "Отраслевые СМИ",
+      "domains": [
+        "pharmmedprom.ru"
+      ]
+    }
+  ],
+  "google_location": "Moscow,Moscow,Russia"
 }

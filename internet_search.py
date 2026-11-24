@@ -30,9 +30,23 @@ def api_response(payload, key):
     return result
 
 
-def discovery_queries(brands):
-    return [(brand["name"], f'"{brand["name"]}" {suffix}')
-            for suffix in QUERY_SUFFIXES for brand in brands]
+def discovery_queries(brands, channels=None):
+    from itertools import zip_longest
+    def expression(brand):
+        aliases = list(dict.fromkeys(str(a).replace('"', '').strip() for a in brand["aliases"]))
+        return "(" + " OR ".join('"' + a + '"' for a in aliases) + ")"
+    general = [(b["name"], f'{expression(b)} {suffix}') for suffix in QUERY_SUFFIXES for b in brands]
+    groups = [general]
+    for category in ("Соцсети", "Отраслевые СМИ"):
+        scoped = []
+        for channel in channels or []:
+            if channel["category"] != category:
+                continue
+            sites = "(" + " OR ".join("site:" + domain for domain in channel["domains"]) + ")"
+            scoped.extend((b["name"], f'{expression(b)} {sites}') for b in brands)
+        if scoped:
+            groups.append(scoped)
+    return [query for batch in zip_longest(*groups) for query in batch if query is not None]
 
 
 def openai_sources(query, key, city, country):

@@ -174,6 +174,9 @@ def parse_page(url, raw, brands):
     names = brand_mentions(title + " " + body, brands)
     if not names:
         raise ValueError("Упоминание выбранных брендов на странице не подтверждено")
+    if (urlsplit(url).hostname.removeprefix("www.") in {"threads.com", "threads.net"}
+            and not brand_mentions(body, brands)):
+        raise ValueError("Threads: текст поста недоступен; ссылка остаётся в поисковых результатах")
     focus = brand_mentions(title, brands)
     if focus:
         names = focus
