@@ -17,6 +17,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
+from dotenv import load_dotenv
+
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -24,6 +26,7 @@ from openpyxl.utils import get_column_letter
 from product_utils import matches_name
 
 ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env", override=False)
 MSK = timezone(timedelta(hours=3))
 USER_AGENT = "PharmaPriceMonitor/0.1"
 MONEY_FORMAT = '#,##0.00 "₽"'
@@ -353,7 +356,7 @@ def add_observations(book, title, rows, products):
     sheet.auto_filter.ref = sheet.dimensions
 
 
-def write_report(path, catalog, current, history, overview, changes, note, day, research=None):
+def write_report(path, catalog, current, history, overview, changes, note, day, research=None, internet=None):
     book = Workbook()
     sheet = book.active
     sheet.title = "Сводка"
@@ -404,6 +407,9 @@ def write_report(path, catalog, current, history, overview, changes, note, day, 
         from market_research import add_sheets
 
         add_sheets(book, research, format_table, MONEY_FORMAT)
+    if internet is not None:
+        from internet_monitor import add_excel_sheets
+        add_excel_sheets(book, internet, format_table)
     with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".xlsx", delete=False) as handle:
         temporary = Path(handle.name)
     try:
@@ -422,6 +428,8 @@ def main():
     parser.add_argument("--research-config", type=Path, default=ROOT / "research_config.json")
     parser.add_argument("--visibility-feed", type=Path, help="CSV с фактическими позициями в выдаче")
     parser.add_argument("--search-snapshots", type=Path, help="CSV-манифест сохранённых HTML выдачи")
+    parser.add_argument("--skip-internet", action="store_true", help="Отключить интернет-мониторинг")
+    parser.add_argument("--internet-config", type=Path, default=ROOT / "internet_config.json")
     args = parser.parse_args()
     catalog = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))
     now = datetime.now(MSK)
@@ -454,7 +462,16 @@ def main():
     if snapshots is not None:
         research = run_research(catalog, snapshots, args.data_dir / "research.sqlite3",
                                 day, args.no_ai, setup, fetch_html)
-    write_report(output, catalog, current, history, overview, changes, note, day, research)
+    internet = None
+    if not args.skip_internet and not args.prices_only:
+        from internet_monitor import collect as collect_internet, load_config, write_snapshot
+        try:
+            internet = collect_internet(load_config(args.internet_config), args.data_dir / "internet.sqlite3",
+                                        no_ai=args.no_ai)
+            write_snapshot(args.data_dir / "internet_snapshot.json", internet)
+        except (OSError, ValueError, KeyError, sqlite3.Error) as exc:
+            print(f"Интернет-мониторинг не завершён: {exc}", file=sys.stderr)
+    write_report(output, catalog, current, history, overview, changes, note, day, research, internet)
     print(f"Карточки: {len(direct) - errors}/{len(direct)}. Строк из CSV: {len(imports)}. Отчёт: {output}")
     return 2 if errors else 0
 

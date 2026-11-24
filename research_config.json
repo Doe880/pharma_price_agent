@@ -48,6 +48,18 @@
       "targets": [
         "instigo-women-675-30"
       ]
+    },
+    {
+      "query": "Хепиклим форте",
+      "targets": [
+        "hepiklim-forte-645-30"
+      ]
+    },
+    {
+      "query": "Хепиклим форте 645 мг 30 капсул",
+      "targets": [
+        "hepiklim-forte-645-30"
+      ]
     }
   ]
 }

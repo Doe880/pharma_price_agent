@@ -13,6 +13,9 @@ from openpyxl import load_workbook
 from dotenv import load_dotenv
 
 from product_utils import product_label
+from internet_dashboard import render as render_internet, load_report as load_internet_report
+from internet_sources import brand_mentions
+from internet_monitor import load_config as load_internet_config, TABLES as INTERNET_TABLES
 
 from dashboard_summary import build_payload, cache_key, cached_summary, generate_summary, save_summary
 
@@ -197,8 +200,8 @@ if not selected_skus:
     st.info("Выберите хотя бы один товар в боковой панели.")
     st.stop()
 
-summary_tab, price_tab, review_tab, visibility_tab, audit_tab, promo_tab, check_tab = st.tabs(
-    ["ИИ-сводка", "Цены", "Отзывы", "Видимость", "Аудит карточек", "Промо", "Диагностика"]
+summary_tab, price_tab, review_tab, visibility_tab, audit_tab, promo_tab, internet_tab, check_tab = st.tabs(
+    ["ИИ-сводка", "Цены", "Отзывы", "Видимость", "Аудит карточек", "Промо", "Интернет", "Диагностика"]
 )
 
 with summary_tab:
@@ -209,7 +212,22 @@ with summary_tab:
               for name, frame in frames.items()
               if name in {"Проверки", "Отзывы по темам", "Видимость", "Аудит карточек",
                           "Календарь промо", "Частота промо"}}
-    payload = build_payload(heading, selected_skus, city, scoped)
+    selected_brands = brand_mentions(" ".join(PRODUCTS[sku]["brand"] for sku in selected_skus),
+                                     load_internet_config()["all_brands"])
+    internet_aggregates = None
+    try:
+        internet_report, internet_example = load_internet_report(DATA_DIR)
+        if internet_report:
+            internet_aggregates = {
+                "дата_среза": internet_report["generated_at"], "пример": internet_example,
+                "показатели": [dict(zip(INTERNET_TABLES["Интернет конкурентов"], row))
+                               for row in internet_report["tables"]["Интернет конкурентов"]
+                               if row[0] in selected_brands],
+                "методика": internet_report.get("methodology", []),
+            }
+    except (OSError, ValueError, KeyError):
+        pass
+    payload = build_payload(heading, selected_skus, city, scoped, internet_aggregates)
     payload_key = cache_key(payload)
     summary_path = DATA_DIR / "dashboard_summaries.sqlite3"
     summary = st.session_state.get("summary_results", {}).get(payload_key)
@@ -399,3 +417,7 @@ with check_tab:
     if not log.empty and "SKU" in log:
         log = log[log["SKU"].isna() | (log["SKU"] == "") | log["SKU"].isin(selected_skus)]
     table(log, "В этом отчёте нет отдельного листа диагностики исследований.")
+
+
+with internet_tab:
+    render_internet(DATA_DIR, selected_brands, api_key, table, chart)

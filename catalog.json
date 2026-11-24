@@ -43,6 +43,12 @@
       "dose": "675 мг",
       "form": "капсулы",
       "pack": 30
+    },
+    "hepiklim-forte-645-30": {
+      "brand": "Хепиклим форте",
+      "dose": "645 мг",
+      "form": "капсулы",
+      "pack": 30
     }
   },
   "cards": [
@@ -79,8 +85,8 @@
     {
       "source": "Apteka.ru",
       "sku": "instigo-men-395-30",
-      "id": "693abc2f912b01757db064e1",
-      "url": "https://apteka.ru/product/instigo-dlya-nego-30-sht-kapsuly-massoj-395-mg-693abc2f912b01757db064e1/"
+      "id": "693abc2f6473d7524a19d78a",
+      "url": "https://apteka.ru/product/instigo-dlya-nego-30-sht-kapsuly-massoj-395-mg-693abc2f6473d7524a19d78a/"
     },
     {
       "source": "Здравсити",
@@ -91,14 +97,20 @@
     {
       "source": "Apteka.ru",
       "sku": "instigo-women-675-30",
-      "id": "693abeb56c6101ee030617c6",
-      "url": "https://apteka.ru/product/instigo-dlya-nee-30-sht-kapsuly-massoj-675-mg-693abeb56c6101ee030617c6/"
+      "id": "693abeb56473d7524a1b7043",
+      "url": "https://apteka.ru/product/instigo-dlya-nee-30-sht-kapsuly-massoj-675-mg-693abeb56473d7524a1b7043/"
     },
     {
       "source": "Здравсити",
       "sku": "instigo-women-675-30",
       "id": "356052",
       "url": "https://zdravcity.ru/p_instigo-dlja-nee-kapsuly-675mg-30sht-0267828.html"
+    },
+    {
+      "source": "Apteka.ru",
+      "sku": "hepiklim-forte-645-30",
+      "id": "690455682030b5e802f5b29d",
+      "url": "https://apteka.ru/product/xepiklim-forte-30-sht-kapsuly-massoj-645-mg-690455682030b5e802f5b29d/"
     }
   ]
 }

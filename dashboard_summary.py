@@ -25,6 +25,8 @@ INSTRUCTIONS = """
 Аудит карточек отражает расхождения для ручной проверки.
 Не делай выводов об эффективности препаратов, лечении, спросе или долях рынка.
 Отдельно обозначай гипотезы и действия. Не объясняй причину изменения цены без данных.
+Интернет-метрики относятся только к собранным источникам и отдельной дате среза.
+Не выводи из числа упоминаний долю рынка или спрос. Демонстрационные срезы явно обозначай.
 Не добавляй ссылки или цитаты, их нет во входных агрегатах.
 До 450 слов. Markdown без таблиц.
 """.strip()
@@ -47,7 +49,7 @@ def counts(frame, field):
     return dict(Counter(str(value) for value in frame[field].dropna()))
 
 
-def build_payload(heading, selected_skus, city, frames):
+def build_payload(heading, selected_skus, city, frames, internet=None):
     # Only aggregate fields reach the model. Review texts, quotations, links and names of authors stay local.
     scope = {"отчёт": heading, "город": city, "SKU": sorted(selected_skus)}
     prices = frames.get("Проверки", pd.DataFrame())
@@ -100,6 +102,8 @@ def build_payload(heading, selected_skus, city, frames):
                     "Доля топ-10 считается на проверенных запросах. Поля null означают отсутствие данных. "
                     "При более чем 100 предложениях перечислены первые 100; счётчики охватывают весь выбранный срез.",
     }
+    if internet is not None:
+        result["интернет"] = internet
     return json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 

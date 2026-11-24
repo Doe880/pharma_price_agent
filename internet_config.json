@@ -1,0 +1,182 @@
+{
+  "city": "Москва",
+  "country": "RU",
+  "max_pages": 30,
+  "max_discovery_queries": 3,
+  "request_timeout": 12,
+  "request_delay": 1.2,
+  "brands": [
+    {
+      "name": "Галавит",
+      "aliases": [
+        "Галавит",
+        "Galavit"
+      ],
+      "role": "Основной",
+      "domains": [
+        "galavit.ru",
+        "salvim.ru"
+      ]
+    },
+    {
+      "name": "Амула Про",
+      "aliases": [
+        "Амула Про",
+        "АмулаПРО",
+        "Amulapro",
+        "Амула"
+      ],
+      "role": "Основной",
+      "domains": [
+        "amulapro.ru",
+        "salvim.ru"
+      ]
+    },
+    {
+      "name": "Инстиго",
+      "aliases": [
+        "Инстиго",
+        "Instigo"
+      ],
+      "role": "Основной",
+      "domains": [
+        "pro-instigo.ru",
+        "salvim.ru"
+      ]
+    },
+    {
+      "name": "Хепиклим форте",
+      "aliases": [
+        "Хепиклим",
+        "Хепиклим форте",
+        "Happyclim",
+        "Хэпиклим"
+      ],
+      "role": "Основной",
+      "domains": [
+        "happyclim.ru",
+        "salvim.ru"
+      ]
+    }
+  ],
+  "comparison_brands": [],
+  "sources": [
+    {
+      "url": "https://www.galavit.ru/",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://www.galavit.ru/spec.html",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://amulapro.ru/",
+      "brands": [
+        "Амула Про"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://pro-instigo.ru/",
+      "brands": [
+        "Инстиго"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://salvim.ru/",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://www.happyclim.ru/",
+      "brands": [
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://www.happyclim.ru/instruction",
+      "brands": [
+        "Хепиклим форте"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://apteka.ru/promotions/spetsialnaya-tsena-na-bad-dlya-zhenshchin-khepiklim-forte/",
+      "brands": [
+        "Хепиклим форте"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://salvim.ru/news",
+      "brands": [
+        "Галавит",
+        "Амула Про",
+        "Инстиго",
+        "Хепиклим форте"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://www.sostav.ru/moskva-production",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://innovation-lab.ru/news/",
+      "brands": [
+        "Галавит"
+      ],
+      "kind": "index"
+    },
+    {
+      "url": "https://www.otzyvru.com/amulapro-amula-fertilnost-dlya-jenschin-30/review-2309319",
+      "brands": [
+        "Амула Про"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://apteka.ru/product/amulapro-amula-fertilnost-dlya-zhenshhin-30-sht-poroshok-paket-sashe-po-5-g-69e72b21f68b38714315b021/",
+      "brands": [
+        "Амула Про"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://apteka.ru/product/instigo-dlya-nego-30-sht-kapsuly-massoj-395-mg-693abc2f6473d7524a19d78a/",
+      "brands": [
+        "Инстиго"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://apteka.ru/product/instigo-dlya-nee-30-sht-kapsuly-massoj-675-mg-693abeb56473d7524a1b7043/",
+      "brands": [
+        "Инстиго"
+      ],
+      "kind": "page"
+    },
+    {
+      "url": "https://apteka.ru/product/xepiklim-forte-30-sht-kapsuly-massoj-645-mg-690455682030b5e802f5b29d/",
+      "brands": [
+        "Хепиклим форте"
+      ],
+      "kind": "page"
+    }
+  ]
+}
