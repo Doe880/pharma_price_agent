@@ -1,16 +1,104 @@
 {
   "city": "Москва",
   "products": {
-    "galavit-100-10": {"brand": "Галавит", "dose": "100 мг", "form": "суппозитории ректальные", "pack": 10},
-    "longidaza-3000-10": {"brand": "Лонгидаза", "dose": "3000 МЕ", "form": "суппозитории вагинальные и ректальные", "pack": 10},
-    "superlimf-25-10": {"brand": "Суперлимф", "dose": "25 ЕД", "form": "суппозитории вагинальные и ректальные", "pack": 10}
+    "galavit-100-10": {
+      "brand": "Галавит",
+      "dose": "100 мг",
+      "form": "суппозитории ректальные",
+      "pack": 10
+    },
+    "galavit-powder-100-5": {
+      "brand": "Галавит",
+      "dose": "100 мг",
+      "form": "порошок для приготовления раствора",
+      "pack": 5,
+      "form_terms": [
+        "порошок",
+        "раствор"
+      ]
+    },
+    "amulapro-powder-5g-30": {
+      "brand": "Амула Про",
+      "dose": "5 г",
+      "form": "порошок пакет-саше",
+      "pack": 30,
+      "name_prefixes": [
+        "Amulapro",
+        "Амула Про",
+        "АмулаПРО"
+      ],
+      "form_terms": [
+        "порошок",
+        "саше"
+      ]
+    },
+    "instigo-men-395-30": {
+      "brand": "Инстиго для него",
+      "dose": "395 мг",
+      "form": "капсулы",
+      "pack": 30
+    },
+    "instigo-women-675-30": {
+      "brand": "Инстиго для нее",
+      "dose": "675 мг",
+      "form": "капсулы",
+      "pack": 30
+    }
   },
   "cards": [
-    {"source":"Apteka.ru","sku":"galavit-100-10","id":"5e326763ca7bdc000192c629","url":"https://apteka.ru/product/galavit-100-mg-10-sht-suppozitorii-rektalnye-5e326763ca7bdc000192c629/"},
-    {"source":"Apteka.ru","sku":"longidaza-3000-10","id":"5e326ae6f5a9ae0001409868","url":"https://apteka.ru/product/longidaza-3000-me-10-sht-vaginalnye-i-rektalnye-suppozitorii-5e326ae6f5a9ae0001409868/"},
-    {"source":"Apteka.ru","sku":"superlimf-25-10","id":"5e3269d165b5ab0001651e36","url":"https://apteka.ru/product/superlimf-25-ed-10-sht-suppozitorii-vaginalnye-i-rektalnye-5e3269d165b5ab0001651e36/"},
-    {"source":"Здравсити","sku":"galavit-100-10","id":"24897","url":"https://zdravcity.ru/p_galavit-supp-rekt-100mg-n10-0010663.html"},
-    {"source":"Здравсити","sku":"longidaza-3000-10","id":"37848","url":"https://zdravcity.ru/p_longidaza-supp-vag-rekt-3-tys-me-n10-0004138.html"},
-    {"source":"Здравсити","sku":"superlimf-25-10","id":"222753","url":"https://zdravcity.ru/p_superlimf-supp-vag-rekt-25-ed-n10-0028199.html"}
+    {
+      "source": "Apteka.ru",
+      "sku": "galavit-100-10",
+      "id": "5e326763ca7bdc000192c629",
+      "url": "https://apteka.ru/product/galavit-100-mg-10-sht-suppozitorii-rektalnye-5e326763ca7bdc000192c629/"
+    },
+    {
+      "source": "Здравсити",
+      "sku": "galavit-100-10",
+      "id": "24897",
+      "url": "https://zdravcity.ru/p_galavit-supp-rekt-100mg-n10-0010663.html"
+    },
+    {
+      "source": "Apteka.ru",
+      "sku": "galavit-powder-100-5",
+      "id": "5e326778ca7bdc000192c6c2",
+      "url": "https://apteka.ru/product/galavit-100-mg-poroshok-dlya-prigotovleniya-rastvora-flakon-5-sht-5e326778ca7bdc000192c6c2/"
+    },
+    {
+      "source": "Здравсити",
+      "sku": "galavit-powder-100-5",
+      "id": "19223",
+      "url": "https://zdravcity.ru/p_galavit-por-d-in-100mg-10ml-n5-0010423.html"
+    },
+    {
+      "source": "Apteka.ru",
+      "sku": "amulapro-powder-5g-30",
+      "id": "69e72b21f68b38714315b021",
+      "url": "https://apteka.ru/product/amulapro-amula-fertilnost-dlya-zhenshhin-30-sht-poroshok-paket-sashe-po-5-g-69e72b21f68b38714315b021/"
+    },
+    {
+      "source": "Apteka.ru",
+      "sku": "instigo-men-395-30",
+      "id": "693abc2f912b01757db064e1",
+      "url": "https://apteka.ru/product/instigo-dlya-nego-30-sht-kapsuly-massoj-395-mg-693abc2f912b01757db064e1/"
+    },
+    {
+      "source": "Здравсити",
+      "sku": "instigo-men-395-30",
+      "id": "356053",
+      "url": "https://zdravcity.ru/p_instigo-dlja-nego-kapsuly-395mg-30sht-0267829.html"
+    },
+    {
+      "source": "Apteka.ru",
+      "sku": "instigo-women-675-30",
+      "id": "693abeb56c6101ee030617c6",
+      "url": "https://apteka.ru/product/instigo-dlya-nee-30-sht-kapsuly-massoj-675-mg-693abeb56c6101ee030617c6/"
+    },
+    {
+      "source": "Здравсити",
+      "sku": "instigo-women-675-30",
+      "id": "356052",
+      "url": "https://zdravcity.ru/p_instigo-dlja-nee-kapsuly-675mg-30sht-0267828.html"
+    }
   ]
 }

@@ -1,15 +1,53 @@
 {
-  "cities": ["Москва"],
+  "cities": [
+    "Москва"
+  ],
   "coverage_threshold_pct": 15,
   "review_limit_per_card": 40,
   "max_ai_new_reviews": 200,
   "queries": [
-    {"query": "Галавит", "targets": ["galavit-100-10"]},
-    {"query": "Галавит 100 мг 10 суппозитории", "targets": ["galavit-100-10"]},
-    {"query": "Лонгидаза", "targets": ["longidaza-3000-10"]},
-    {"query": "Лонгидаза 3000 МЕ 10 суппозитории", "targets": ["longidaza-3000-10"]},
-    {"query": "Суперлимф", "targets": ["superlimf-25-10"]},
-    {"query": "Суперлимф 25 ЕД 10 суппозитории", "targets": ["superlimf-25-10"]},
-    {"query": "суппозитории", "targets": ["galavit-100-10", "longidaza-3000-10", "superlimf-25-10"]}
+    {
+      "query": "Галавит",
+      "targets": [
+        "galavit-100-10",
+        "galavit-powder-100-5"
+      ]
+    },
+    {
+      "query": "Галавит 100 мг 10 суппозитории",
+      "targets": [
+        "galavit-100-10"
+      ]
+    },
+    {
+      "query": "Галавит 100 мг порошок 5 флаконов",
+      "targets": [
+        "galavit-powder-100-5"
+      ]
+    },
+    {
+      "query": "Амула Про",
+      "targets": [
+        "amulapro-powder-5g-30"
+      ]
+    },
+    {
+      "query": "Amulapro 5 г 30 саше",
+      "targets": [
+        "amulapro-powder-5g-30"
+      ]
+    },
+    {
+      "query": "Инстиго для него",
+      "targets": [
+        "instigo-men-395-30"
+      ]
+    },
+    {
+      "query": "Инстиго для нее",
+      "targets": [
+        "instigo-women-675-30"
+      ]
+    }
   ]
 }

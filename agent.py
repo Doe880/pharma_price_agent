@@ -21,6 +21,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from product_utils import matches_name
+
 ROOT = Path(__file__).resolve().parent
 MSK = timezone(timedelta(hours=3))
 USER_AGENT = "PharmaPriceMonitor/0.1"
@@ -105,11 +107,7 @@ def parse_card(card, spec, city, html):
         raise ValueError("Структурированные данные нужной карточки не найдены")
     item = matches[0]
     name = str(item.get("name", "")).casefold()
-    dose = re.escape(spec["dose"].replace(" ", "").casefold())
-    if (not name.startswith(spec["brand"].casefold() + " ")
-            or not re.search(rf"(?<!\d){dose}(?![а-я])", name.replace(" ", ""))
-            or not re.search(rf"(?<!\d){spec['pack']}\s*шт", name)
-            or not all(part in name for part in spec["form"].split())):
+    if not matches_name(name, spec):
         raise ValueError("Название, дозировка, форма или размер упаковки не совпали")
     expected = urlsplit(card["url"])
     offers = []
@@ -333,6 +331,8 @@ def add_observations(book, title, rows, products):
                   "Тип цены", "Цена за уп.", "Цена за шт.", "Наличие", "Время МСК", "Канал",
                   "Карточка", "Диагностика"])
     for row in rows:
+        if row["sku"] not in products:
+            continue
         spec = products[row["sku"]]
         price = row["kopecks"]
         time_msk = datetime.fromisoformat(row["observed_at"]).astimezone(MSK).replace(tzinfo=None)

@@ -11,6 +11,7 @@ from lxml import etree, html
 from PIL import Image, ImageOps
 
 from research_visibility import clean
+from product_utils import has_form, has_brand
 
 
 def digest(value):
@@ -201,7 +202,7 @@ def fingerprint(url):
 
 
 def title_value(name, key):
-    value = {"Дозировка": r"\d+(?:[.,]\d+)?\s*(?:мг|ме|ед)(?![а-я])",
+    value = {"Дозировка": r"\d+(?:[.,]\d+)?\s*(?:мг|ме|ед|гр|г)(?![а-я])",
              "В упаковке": r"\d+\s*шт\b"}[key]
     match = re.search(value, clean(name))
     return match[0] if match else ""
@@ -216,7 +217,7 @@ def nominal_value(item, name, key):
 
 
 def compact(value):
-    return re.sub(r"[\s.]", "", clean(value))
+    return re.sub(r"[\s.]", "", clean(value)).replace("гр", "г")
 
 
 def audit_cards(catalog, parsed, diagnostics, image_loader=fingerprint):
@@ -235,7 +236,7 @@ def audit_cards(catalog, parsed, diagnostics, image_loader=fingerprint):
             for field, result, expected, valid in [
                 ("Дозировка", dose, spec["dose"], compact(dose) == compact(spec["dose"])),
                 ("Размер упаковки", pack, str(spec["pack"]), compact(pack).removesuffix("шт") == str(spec["pack"])),
-                ("Форма выпуска", title, form, words(form) <= words(title)),
+                ("Форма выпуска", title, form, has_form(title, spec)),
             ]:
                 if not valid:
                     rows.append([spec["brand"], sku, "Высокий", field, card["source"],
@@ -259,7 +260,7 @@ def audit_cards(catalog, parsed, diagnostics, image_loader=fingerprint):
                                  right, a, b, action])
 
                 if compact(title) != compact(alt_title):
-                    if words(spec["brand"]) <= words(title) and words(spec["brand"]) <= words(alt_title):
+                    if has_brand(title, spec) and has_brand(alt_title, spec):
                         finding("Низкий", "Название", title, alt_title, "Сверить представление названия и порядок полей.")
                     else:
                         finding("Высокий", "Название", title, alt_title, "Проверить, соответствует ли название бренду.")

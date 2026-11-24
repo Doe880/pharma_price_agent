@@ -12,6 +12,8 @@ import streamlit as st
 from openpyxl import load_workbook
 from dotenv import load_dotenv
 
+from product_utils import product_label
+
 from dashboard_summary import build_payload, cache_key, cached_summary, generate_summary, save_summary
 
 ROOT = Path(__file__).resolve().parent
@@ -20,7 +22,7 @@ PALETTE = ["#125965", "#DF8B55", "#466DA1", "#8C729E", "#7B8F45", "#C05560"]
 DATA_DIR = Path(os.getenv("PHARMA_DATA_DIR", ROOT / "data")).expanduser()
 EXAMPLE_DIR = ROOT / "example"
 PRODUCTS = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))["products"]
-NAMES = {sku: f"{p['brand']} · {p['dose']} · {p['pack']} шт." for sku, p in PRODUCTS.items()}
+NAMES = {sku: product_label(product) for sku, product in PRODUCTS.items()}
 
 st.set_page_config(page_title="Мониторинг аптечных витрин", layout="wide")
 st.markdown("""
@@ -74,10 +76,13 @@ def filters(table, geo=True):
     if "SKU" in table:
         table = table[table["SKU"].isin(selected_skus)].assign(**{"Товар": lambda t: t["SKU"].map(NAMES)})
     elif "Препарат" in table and {"Дозировка", "Шт."} <= set(table):
-        names = table["Препарат"].astype(str) + " · " + table["Дозировка"].astype(str)
-        names = names + " · " + pd.to_numeric(table["Шт."], errors="coerce").astype("Int64").astype(str) + " шт."
-        table = table.assign(Товар=names)
-        table = table[table["Товар"].isin([NAMES[sku] for sku in selected_skus])]
+        product_labels = {
+            (product["brand"], product["dose"], product["pack"]): NAMES[sku]
+            for sku, product in PRODUCTS.items() if sku in selected_skus
+        }
+        keys = zip(table["Препарат"], table["Дозировка"], pd.to_numeric(table["Шт."], errors="coerce"))
+        table = table.assign(Товар=[product_labels.get(key) for key in keys])
+        table = table[table["Товар"].notna()]
     if geo and "Город" in table and city != "Все города":
         table = table[table["Город"] == city]
     return table
