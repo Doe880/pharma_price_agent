@@ -63,7 +63,7 @@ def read_retail_cards(catalog, pages, day, max_reviews, fetch_page):
     return reviews, promotions, dict(history), diagnostics
 
 
-def review_report(connection, reviews, luna, catalog, max_new, day):
+def review_report(connection, reviews, luna, catalog, max_new, day, text_rows=None):
     connection.execute("""
         CREATE TABLE IF NOT EXISTS review_samples(
           id TEXT PRIMARY KEY, sku TEXT, source TEXT, published TEXT, body TEXT, url TEXT
@@ -90,6 +90,13 @@ def review_report(connection, reviews, luna, catalog, max_new, day):
         brand = catalog["products"][sku]["brand"]
         totals[sku] += 1
         tags = labels.get(key)
+        if text_rows is not None:
+            text_rows.append([
+                brand, sku, row["source"], row["date"], CONTACTS.sub("[скрыто]", row["body"]),
+                ", ".join(TOPICS[tag["code"]] for tag in tags) if tags else "",
+                "Ожидает разметки" if tags is None else "Размечен Luna",
+                row["url"],
+            ])
         if tags is None:
             items.append([brand, sku, row["source"], row["date"], "Ожидает разметки", "", row["url"]])
             continue
@@ -196,8 +203,9 @@ def run_research(catalog, pages, database, day, no_ai, setup, fetch_page):
                if module == "Промо" and message.startswith("В карточке")}
     with closing(sqlite3.connect(database)) as connection, connection:
         luna = Luna(connection, no_ai)
+        review_texts = []
         review_overview, review_items = review_report(
-            connection, reviews, luna, catalog, config["max_ai_new_reviews"], day
+            connection, reviews, luna, catalog, config["max_ai_new_reviews"], day, review_texts
         )
         intent_map = {digest(query): query for query in config["query_targets"]}
         intent_labels = {intent_map[k]: val for k, val in luna.classify("query", intent_map).items()}
@@ -216,6 +224,7 @@ def run_research(catalog, pages, database, day, no_ai, setup, fetch_page):
                         "Топ‑10 — найденные позиции или подтверждённый просмотр 10 карточек. Пустые срезы исключаются.", ""])
     return {
         "Отзывы по темам": review_overview, "Выборка отзывов": review_items,
+        "Тексты отзывов": review_texts,
         "Видимость": overview, "Позиции поиска": positions, "Потери видимости": losses,
         "Аудит карточек": differences, "Календарь промо": calendar, "Частота промо": frequency,
         "Диагностика исследования": diagnostics,
@@ -224,6 +233,9 @@ def run_research(catalog, pages, database, day, no_ai, setup, fetch_page):
 
 def add_sheets(book, research, format_table, money_format):
     sheets = [
+        ("Тексты отзывов",
+         ["Бренд", "SKU", "Аптека", "Дата отзыва", "Текст отзыва", "Темы", "Статус разметки", "Источник"],
+         [16, 24, 16, 15, 100, 38, 23, 13], (8,), (), ()),
         ("Отзывы по темам",
          ["Бренд", "SKU", "Тема", "Отзывов с темой", "Размечено", "Всего в базе", "Доля", "Примеры цитат",
           "Источник 1", "Источник 2", "Что проверить в карточке или FAQ"],

@@ -88,7 +88,7 @@ def filters(table, geo=True):
     return table
 
 
-def table(frame, message="Данных для выбранных фильтров пока нет."):
+def table(frame, message="Данных для выбранных фильтров пока нет.", row_height=35):
     if frame.empty:
         st.info(message)
         return
@@ -114,7 +114,9 @@ def table(frame, message="Данных для выбранных фильтро�
     for column in groups["points"]:
         if column in frame:
             config[column] = st.column_config.NumberColumn(column, format="%.1f")
-    st.dataframe(frame, hide_index=True, width="stretch", column_config=config)
+    if "Текст отзыва" in frame:
+        config["Текст отзыва"] = st.column_config.TextColumn("Текст отзыва", width="large")
+    st.dataframe(frame, hide_index=True, width="stretch", column_config=config, row_height=row_height)
 
 
 def chart(spec, height=290):
@@ -290,6 +292,20 @@ with price_tab:
         table(current)
 
 with review_tab:
+    texts = filters(data("Тексты отзывов"), geo=False)
+    st.subheader("Тексты отзывов покупателей")
+    if texts.empty:
+        st.info("В этом отчёте ещё нет полных текстов отзывов. Сформируйте новый отчёт обновлённым агентом.")
+    else:
+        source_options = sorted(texts["Аптека"].dropna().unique())
+        review_sources = st.multiselect("Аптеки с отзывами", source_options, default=source_options)
+        review_search = st.text_input("Поиск по тексту отзыва")
+        texts = texts[texts["Аптека"].isin(review_sources)]
+        if review_search:
+            texts = texts[texts["Текст отзыва"].fillna("").str.contains(review_search, case=False, regex=False)]
+        st.caption(f"Отзывов в таблице: {len(texts)}. Одна строка соответствует одному собранному отзыву.")
+        table(texts.drop(columns=["SKU", "Бренд"]), row_height=100)
+    st.subheader("Анализ тем")
     reviews = filters(data("Отзывы по темам"), geo=False)
     if reviews.empty:
         st.info("В этом отчёте нет раздела отзывов.")
