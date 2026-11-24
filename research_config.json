@@ -1,0 +1,15 @@
+{
+  "cities": ["Москва"],
+  "coverage_threshold_pct": 15,
+  "review_limit_per_card": 40,
+  "max_ai_new_reviews": 200,
+  "queries": [
+    {"query": "Галавит", "targets": ["galavit-100-10"]},
+    {"query": "Галавит 100 мг 10 суппозитории", "targets": ["galavit-100-10"]},
+    {"query": "Лонгидаза", "targets": ["longidaza-3000-10"]},
+    {"query": "Лонгидаза 3000 МЕ 10 суппозитории", "targets": ["longidaza-3000-10"]},
+    {"query": "Суперлимф", "targets": ["superlimf-25-10"]},
+    {"query": "Суперлимф 25 ЕД 10 суппозитории", "targets": ["superlimf-25-10"]},
+    {"query": "суппозитории", "targets": ["galavit-100-10", "longidaza-3000-10", "superlimf-25-10"]}
+  ]
+}
