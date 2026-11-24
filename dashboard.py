@@ -227,7 +227,13 @@ with summary_tab:
             }
     except (OSError, ValueError, KeyError):
         pass
-    payload = build_payload(heading, selected_skus, city, scoped, internet_aggregates)
+    # Keep the four-argument call compatible with modules cached during a Streamlit update.
+    payload = build_payload(heading, selected_skus, city, scoped)
+    if internet_aggregates is not None:
+        payload_data = json.loads(payload)
+        payload_data["интернет"] = internet_aggregates
+        payload = json.dumps(payload_data, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":"), allow_nan=False)
     payload_key = cache_key(payload)
     summary_path = DATA_DIR / "dashboard_summaries.sqlite3"
     summary = st.session_state.get("summary_results", {}).get(payload_key)
