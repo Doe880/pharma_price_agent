@@ -12,6 +12,7 @@ import streamlit as st
 from openpyxl import load_workbook
 from dotenv import load_dotenv
 
+from dashboard_collection import run_collection
 from product_utils import product_label
 from internet_dashboard import render as render_internet, load_report as load_internet_report
 from internet_sources import brand_mentions
@@ -22,7 +23,7 @@ from dashboard_summary import build_payload, cache_key, cached_summary, generate
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=False)
 PALETTE = ["#125965", "#DF8B55", "#466DA1", "#8C729E", "#7B8F45", "#C05560"]
-DATA_DIR = Path(os.getenv("PHARMA_DATA_DIR", ROOT / "data")).expanduser()
+DATA_DIR = Path(os.getenv("PHARMA_DATA_DIR", ROOT / "data")).expanduser().resolve()
 EXAMPLE_DIR = ROOT / "example"
 PRODUCTS = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))["products"]
 NAMES = {sku: product_label(product) for sku, product in PRODUCTS.items()}
@@ -162,18 +163,54 @@ def direct_prices(frame):
 
 
 st.title("Мониторинг аптечных витрин")
+with st.sidebar:
+    st.header("Обновление данных")
+    with st.expander("OpenAI для сводки"):
+        api_key = st.text_input("API-ключ", type="password",
+                                help="Можно задать OPENAI_API_KEY в .env или Secrets Streamlit.")
+        api_key = api_key.strip() or os.getenv("OPENAI_API_KEY", "").strip()
+        st.caption("Модель gpt-6-luna. Запрос выполняется по кнопке.")
+    include_internet = st.checkbox("Включить интернет-мониторинг", value=True)
+    api_available = bool(api_key or any(os.getenv(name) for name in
+                         ("BRAVE_SEARCH_API_KEY", "SERPAPI_API_KEY", "THREADS_ACCESS_TOKEN")))
+    use_api = st.checkbox("Использовать подключённые API (ИИ и поиск)", value=False, disabled=not api_available,
+                          help="Включает ИИ-разметку и доступные поисковые API. Запросы могут оплачиваться по тарифам провайдеров.")
+    st.caption("Сбор выполняется для всего каталога и может занять несколько минут.")
+    if st.button("Собрать свежие данные", type="primary"):
+        try:
+            with st.spinner("Собираю цены, отзывы, промо и материалы…"):
+                collected = run_collection(DATA_DIR, api_key=api_key, use_api=use_api,
+                                           include_internet=include_internet)
+            st.session_state["pending_report"] = collected["path"]
+            st.session_state["collection_result"] = collected
+            st.rerun()
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as error:
+            st.error(str(error))
+
+collection_result = st.session_state.pop("collection_result", None)
+if collection_result:
+    if collection_result["partial"]:
+        st.warning("Новый отчёт готов. Часть аптечных карточек не загрузилась — смотрите «Диагностика» и таблицу проверок.")
+    else:
+        st.success("Новый отчёт готов и открыт. Проверки отдельных интернет-источников доступны во вкладке «Интернет».")
 reports = sorted(DATA_DIR.glob("prices_*.xlsx"), key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
 examples = sorted(EXAMPLE_DIR.glob("*.xlsx"), reverse=True)
 choices = reports + examples
 if not choices:
-    st.info("Сформируйте первый отчёт командой python agent.py. Он появится в папке data.")
+    st.info("Нажмите «Собрать свежие данные» в боковой панели, чтобы создать первый отчёт.")
     st.stop()
+
+if st.session_state.get("selected_report") not in choices:
+    st.session_state.pop("selected_report", None)
+pending_report = st.session_state.pop("pending_report", None)
+if pending_report in choices:
+    st.session_state["selected_report"] = pending_report
 
 with st.sidebar:
     st.header("Выборка")
     report = st.selectbox("Отчёт", choices, format_func=lambda p: (
         ("Пример · " if p.parent == EXAMPLE_DIR else "") + p.name
-    ))
+    ), key="selected_report")
     st.button("Проверить новые отчёты", help="Обновляет список готовых Excel-отчётов.")
     try:
         stat = report.stat()
@@ -185,17 +222,12 @@ with st.sidebar:
                      for value in frame["Город"].dropna().unique() if isinstance(value, str) and value})
     city = st.selectbox("Город", ["Все города", *cities], index=1 if len(cities) == 1 else 0)
     selected_skus = st.multiselect("Товары", list(NAMES), default=list(NAMES), format_func=NAMES.__getitem__)
-    with st.expander("OpenAI для сводки"):
-        api_key = st.text_input("API-ключ", type="password",
-                                help="Можно задать OPENAI_API_KEY в .env. Ключ из поля действует в текущем окне.")
-        api_key = api_key.strip() or os.getenv("OPENAI_API_KEY", "").strip()
-        st.caption("Модель gpt-6-luna. Запрос выполняется по кнопке.")
     with report.open("rb") as stream:
         st.download_button("Скачать Excel", stream.read(), file_name=report.name)
 
 st.caption(heading)
 if report.parent == EXAMPLE_DIR:
-    st.info("Демонстрационный срез. Запустите сбор командой python agent.py, чтобы открыть свои данные.")
+    st.info("Демонстрационный срез. Нажмите «Собрать свежие данные» в боковой панели, чтобы открыть свои данные.")
 if not selected_skus:
     st.info("Выберите хотя бы один товар в боковой панели.")
     st.stop()

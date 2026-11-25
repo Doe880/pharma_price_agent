@@ -430,6 +430,8 @@ def main():
     parser.add_argument("--search-snapshots", type=Path, help="CSV-манифест сохранённых HTML выдачи")
     parser.add_argument("--skip-internet", action="store_true", help="Отключить интернет-мониторинг")
     parser.add_argument("--internet-config", type=Path, default=ROOT / "internet_config.json")
+    parser.add_argument("--output", type=Path, help="Путь нового Excel-отчёта")
+    parser.add_argument("--no-internet-search", action="store_true", help="Не вызывать поисковые API и Threads")
     args = parser.parse_args()
     catalog = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))
     now = datetime.now(MSK)
@@ -457,7 +459,8 @@ def main():
     errors = sum(row["state"] == "error" for row in direct)
     note = ("Сводка ИИ отключена для этого запуска." if args.no_ai
             else openai_note(overview, changes, len(direct), errors))
-    output = args.data_dir / f"prices_{now:%Y-%m-%d_%H%M%S_%f}.xlsx"
+    output = args.output or args.data_dir / f"prices_{now:%Y-%m-%d_%H%M%S_%f}.xlsx"
+    output.parent.mkdir(parents=True, exist_ok=True)
     research = None
     if snapshots is not None:
         research = run_research(catalog, snapshots, args.data_dir / "research.sqlite3",
@@ -467,7 +470,7 @@ def main():
         from internet_monitor import collect as collect_internet, load_config, write_snapshot
         try:
             internet = collect_internet(load_config(args.internet_config), args.data_dir / "internet.sqlite3",
-                                        no_ai=args.no_ai)
+                                        no_ai=args.no_ai, use_search=not args.no_internet_search)
             write_snapshot(args.data_dir / "internet_snapshot.json", internet)
         except (OSError, ValueError, KeyError, sqlite3.Error) as exc:
             print(f"Интернет-мониторинг не завершён: {exc}", file=sys.stderr)
