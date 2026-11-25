@@ -11,7 +11,7 @@ from lxml import etree, html
 from PIL import Image, ImageOps
 
 from research_visibility import clean
-from product_utils import has_form, has_brand
+from product_utils import has_amount, has_form, has_brand
 
 
 def digest(value):
@@ -234,7 +234,7 @@ def audit_cards(catalog, parsed, diagnostics, image_loader=fingerprint):
             pack = nominal_value(item, title, "В упаковке")
             form = spec["form"]
             for field, result, expected, valid in [
-                ("Дозировка", dose, spec["dose"], compact(dose) == compact(spec["dose"])),
+                ("Дозировка", dose, spec["dose"], has_amount(dose, spec["dose"])),
                 ("Размер упаковки", pack, str(spec["pack"]), compact(pack).removesuffix("шт") == str(spec["pack"])),
                 ("Форма выпуска", title, form, has_form(title, spec)),
             ]:
@@ -244,9 +244,9 @@ def audit_cards(catalog, parsed, diagnostics, image_loader=fingerprint):
                                  "Сверить с эталонным SKU и исправить карточку."])
             for key, observed_value in [("Дозировка", dose), ("В упаковке", pack)]:
                 displayed = title_value(title, key)
-                if displayed and observed_value and (
-                    compact(displayed).removesuffix("шт") != compact(observed_value).removesuffix("шт")
-                ):
+                same_value = (has_amount(displayed, observed_value) if key == "Дозировка"
+                              else compact(displayed).removesuffix("шт") == compact(observed_value).removesuffix("шт"))
+                if displayed and observed_value and not same_value:
                     rows.append([spec["brand"], sku, "Высокий", key, card["source"],
                                  f"Название: {displayed}", "", f"Характеристики: {observed_value}",
                                  card["url"], "", "Согласовать название с характеристиками."])
