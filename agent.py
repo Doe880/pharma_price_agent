@@ -31,6 +31,9 @@ MSK = timezone(timedelta(hours=3))
 USER_AGENT = "PharmaPriceMonitor/0.1"
 MONEY_FORMAT = '#,##0.00 "₽"'
 SOURCES = {"Ozon": {"ozon.ru", "www.ozon.ru"}, "Ютека": {"uteka.ru", "www.uteka.ru"}}
+PARTNER = "Здравсити"
+PARTNER_LABEL = "Выгрузка Здравсити"
+FEED_FIELDS = ("source", "sku", "city", "seller", "url", "price_type", "availability", "observed_at", "price_rub")
 TYPES = {"public": "Публичная", "from": "От", "card": "По карте"}
 STATES = {
     "in_stock": "Доступен к заказу", "out_of_stock": "Нет в наличии",
@@ -145,6 +148,20 @@ def observation(source, sku, city, seller, url, observed_at, kind, price, state,
     }
 
 
+def http_diagnostic(exc):
+    details = [f"HTTP {exc.code}"]
+    headers = exc.headers or {}
+    if exc.code == 403:
+        details.append("отказ в доступе при загрузке страницы")
+        if headers.get("cf-mitigated", "").lower() == "challenge":
+            details.append("сервер запросил проверку клиента")
+    for header in ("Server", "X-Request-ID", "CF-Ray", "Retry-After"):
+        value = headers.get(header, "")
+        if re.fullmatch(r"[a-zA-Z0-9 .,:_()/-]{1,80}", value):
+            details.append(f"{header}={value}")
+    return " · ".join(details)
+
+
 def collect(catalog, snapshots=None):
     rows = []
     city = catalog["city"]
@@ -160,7 +177,8 @@ def collect(catalog, snapshots=None):
         except (OSError, ValueError) as exc:
             price, state = None, "error"
             if isinstance(exc, HTTPError):
-                error = f"HTTP {exc.code}"
+                error = http_diagnostic(exc)
+                exc.close()
             elif isinstance(exc, URLError):
                 error = "Сетевая ошибка или тайм-аут"
             else:
@@ -175,18 +193,27 @@ def load_feed(path, catalog, day):
     rows = []
     identities = set()
     with path.open(encoding="utf-8-sig", newline="") as stream:
-        for number, row in enumerate(csv.DictReader(stream), 2):
+        header = stream.readline()
+        stream.seek(0)
+        reader = csv.DictReader(stream, delimiter=";" if ";" in header else ",")
+        fields = reader.fieldnames or []
+        if not set(FEED_FIELDS).issubset(fields) or len(fields) != len(set(fields)):
+            raise ValueError("Проверьте обязательные столбцы и повторы заголовков CSV по шаблону.")
+        partner_cards = {card["sku"]: card["url"] for card in catalog["cards"] if card["source"] == PARTNER}
+        for number, row in enumerate(reader, 2):
             try:
                 source, sku, city, seller, url, kind, state, timestamp, raw_price = (
-                    row[key].strip() for key in (
-                        "source", "sku", "city", "seller", "url", "price_type",
-                        "availability", "observed_at", "price_rub"
-                    )
+                    row[key].strip() for key in FEED_FIELDS
                 )
                 link = urlsplit(url)
-                if (source not in SOURCES or sku not in catalog["products"] or city != catalog["city"]
+                if None in row:
+                    raise ValueError("Лишние значения в строке CSV")
+                if source == PARTNER and (seller != PARTNER or kind != "public" or url != partner_cards.get(sku)):
+                    raise ValueError("Для Здравсити нужны публичное предложение площадки и URL этого SKU из каталога")
+                hosts = {"zdravcity.ru"} if source == PARTNER else SOURCES.get(source, set())
+                if (sku not in catalog["products"] or city != catalog["city"]
                         or kind not in TYPES or state not in {"in_stock", "out_of_stock", "unknown"}
-                        or not seller or link.scheme != "https" or link.hostname not in SOURCES[source]
+                        or not seller or link.scheme != "https" or link.hostname not in hosts
                         or link.netloc != link.hostname or not link.path.strip("/")):
                     raise ValueError("Неподдерживаемый источник, SKU, город, продавец, URL или статус")
                 when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
@@ -204,8 +231,22 @@ def load_feed(path, catalog, day):
             except (AttributeError, KeyError, ValueError) as exc:
                 raise ValueError(f"CSV, строка {number}. {exc}") from exc
             rows.append(observation(source, sku, city, seller, url, when.astimezone(timezone.utc)
-                                    .isoformat(timespec="seconds"), kind, price, state, "feed"))
+                                    .isoformat(timespec="seconds"), kind, price, state,
+                                    "partner" if source == PARTNER else "feed"))
     return rows
+
+
+def apply_feed(direct, imports):
+    partner = {row["sku"]: row for row in imports if row["channel"] == "partner"}
+    current = []
+    for row in direct:
+        fallback = partner.get(row["sku"]) if row["source"] == PARTNER else None
+        if fallback and row["state"] == "error":
+            current.append(dict(fallback, error=f'{row["error"]} · попытка {row["observed_at"]}'))
+        else:
+            current.append(row)
+    current.extend(row for row in imports if row["channel"] != "partner")
+    return current
 
 
 def save_run(database, run_id, rows):
@@ -240,7 +281,7 @@ def summarize(catalog, current, history, day):
     overview = []
     for sku, spec in catalog["products"].items():
         prices = [row["kopecks"] for row in available if row["sku"] == sku
-                  and row["channel"] == "site" and row["kind"] == "public"]
+                  and row["channel"] in {"site", "partner"} and row["kind"] == "public"]
         overview.append({
             "brand": spec["brand"], "dose": spec["dose"], "pack": spec["pack"],
             "offers": len(prices), "min_rub": min(prices) / 100 if prices else None,
@@ -343,7 +384,7 @@ def add_observations(book, title, rows, products):
                       spec["form"], spec["pack"], TYPES[row["kind"]],
                       price / 100 if price is not None else None,
                       price / 100 / spec["pack"] if price is not None else None,
-                      STATES[row["state"]], time_msk, "Сайт" if row["channel"] == "site" else "CSV",
+                      STATES[row["state"]], time_msk, {"site": "Сайт", "partner": PARTNER_LABEL}.get(row["channel"], "CSV"),
                       "Открыть", row["error"]])
         index = sheet.max_row
         for column in ("I", "J"):
@@ -371,11 +412,12 @@ def write_report(path, catalog, current, history, overview, changes, note, day, 
             sheet[f"{column}{sheet.max_row}"].number_format = MONEY_FORMAT
     format_table(sheet, [22, 16, 12, 17, 17, 17, 17], header=2)
     direct = [r for r in current if r["channel"] == "site"]
+    replaced = sum(r["channel"] == "partner" for r in current)
     errors = sum(r["state"] == "error" for r in direct)
     imports = len(current) - len(direct)
     for line in [
-        f"Прямые проверки: {len(direct) - errors} из {len(direct)} успешны. Строк из CSV: {imports}.",
-        "В сводке только публичные цены карточек с подтверждённым наличием из прямого сбора.",
+        f"Прямые проверки: {len(direct) - errors} из {len(direct) + replaced} успешны. Строк из CSV: {imports}.",
+        "В сводке только публичные цены в наличии с сайта или из согласованной выгрузки Здравсити.",
         "«Изменения» сравнивает цены той же карточки, продавца и типа за вчера по Москве.",
         "Ozon и Ютека подключаются через CSV. Условия и типы цен доступны на листе «Проверки».",
         "Комментарий ИИ",
@@ -422,7 +464,7 @@ def write_report(path, catalog, current, history, overview, changes, note, day, 
 def main():
     parser = argparse.ArgumentParser(description="Мониторинг цен аптечных карточек")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
-    parser.add_argument("--feed", type=Path, help="CSV с актуальными ценами Ozon или Ютеки")
+    parser.add_argument("--feed", type=Path, help="CSV с актуальными ценами Здравсити, Ozon или Ютеки")
     parser.add_argument("--no-ai", action="store_true", help="Сформировать отчёт без OpenAI")
     parser.add_argument("--prices-only", action="store_true", help="Собрать прежний отчёт по ценам")
     parser.add_argument("--research-config", type=Path, default=ROOT / "research_config.json")
@@ -453,7 +495,7 @@ def main():
     direct = collect(catalog, snapshots)
     if datetime.now(MSK).date() != day:
         parser.error("Во время сбора сменилась дата Москвы. Запустите сбор повторно.")
-    current = direct + imports
+    current = apply_feed(direct, imports)
     history = save_run(args.data_dir / "prices.sqlite3", now.isoformat(timespec="microseconds"), current)
     overview, changes = summarize(catalog, current, history, day)
     errors = sum(row["state"] == "error" for row in direct)

@@ -1,4 +1,6 @@
 """Run the CLI collector in an isolated process from the dashboard."""
+import csv
+import io
 import json
 import logging
 import os
@@ -47,7 +49,18 @@ def internet_settings(data_dir):
     return config
 
 
-def run_collection(data_dir, api_key='', use_api=False, include_internet=True):
+def partner_template(catalog):
+    from agent import FEED_FIELDS, PARTNER
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(FEED_FIELDS)
+    for card in catalog["cards"]:
+        if card["source"] == PARTNER:
+            writer.writerow([PARTNER, card["sku"], catalog["city"], PARTNER, card["url"], "public", "", "", ""])
+    return output.getvalue().encode("utf-8-sig")
+
+
+def run_collection(data_dir, api_key='', use_api=False, include_internet=True, partner_feed=None):
     data_dir = Path(data_dir).resolve()
     with collection_guard(data_dir):
         stamp = datetime.now(timezone(timedelta(hours=3))).strftime('%Y-%m-%d_%H%M%S')
@@ -58,7 +71,20 @@ def run_collection(data_dir, api_key='', use_api=False, include_internet=True):
         if not include_internet:
             command.append('--skip-internet')
         temporary = None
+        feed_path = None
         try:
+            if partner_feed is not None:
+                from agent import MSK, load_feed
+                if not 0 < len(partner_feed) <= 2_000_000:
+                    raise ValueError("Нужен непустой CSV размером до 2 МБ.")
+                with tempfile.NamedTemporaryFile(dir=data_dir, suffix=".csv", delete=False) as handle:
+                    feed_path = Path(handle.name)
+                    handle.write(partner_feed)
+                catalog = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))
+                rows = load_feed(feed_path, catalog, datetime.now(MSK).date())
+                if not rows or any(row["channel"] != "partner" for row in rows):
+                    raise ValueError("Загрузите хотя бы одну строку согласованной выгрузки Здравсити.")
+                command.extend(["--feed", str(feed_path)])
             if include_internet:
                 config = internet_settings(data_dir)
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.json', prefix='collection_config_',
@@ -77,6 +103,8 @@ def run_collection(data_dir, api_key='', use_api=False, include_internet=True):
         except OSError:
             raise ValueError('Не удалось запустить сбор в окружении Streamlit.') from None
         finally:
+            if feed_path is not None:
+                feed_path.unlink(missing_ok=True)
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         if result.returncode not in {0, 2} or not output.exists() or output.stat().st_size == 0:

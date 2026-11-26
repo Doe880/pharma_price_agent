@@ -12,7 +12,7 @@ import streamlit as st
 from openpyxl import load_workbook
 from dotenv import load_dotenv
 
-from dashboard_collection import run_collection
+from dashboard_collection import partner_template, run_collection
 from product_utils import product_label
 from internet_dashboard import render as render_internet, load_report as load_internet_report
 from internet_sources import brand_mentions
@@ -25,7 +25,8 @@ load_dotenv(ROOT / ".env", override=False)
 PALETTE = ["#125965", "#DF8B55", "#466DA1", "#8C729E", "#7B8F45", "#C05560"]
 DATA_DIR = Path(os.getenv("PHARMA_DATA_DIR", ROOT / "data")).expanduser().resolve()
 EXAMPLE_DIR = ROOT / "example"
-PRODUCTS = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))["products"]
+CATALOG = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))
+PRODUCTS = CATALOG["products"]
 NAMES = {sku: product_label(product) for sku, product in PRODUCTS.items()}
 
 st.set_page_config(page_title="Мониторинг аптечных витрин", layout="wide")
@@ -158,7 +159,7 @@ def direct_prices(frame):
         return frame
     return frame[
         (frame["Тип цены"] == "Публичная") & (frame["Наличие"] == "Доступен к заказу")
-        & frame["Цена за уп."].notna() & (frame["Канал"] == "Сайт")
+        & frame["Цена за уп."].notna() & frame["Канал"].isin(["Сайт", "Выгрузка Здравсити"])
     ].copy()
 
 
@@ -175,12 +176,20 @@ with st.sidebar:
                          ("BRAVE_SEARCH_API_KEY", "SERPAPI_API_KEY", "THREADS_ACCESS_TOKEN")))
     use_api = st.checkbox("Использовать подключённые API (ИИ и поиск)", value=False, disabled=not api_available,
                           help="Включает ИИ-разметку и доступные поисковые API. Запросы могут оплачиваться по тарифам провайдеров.")
+    with st.expander("Выгрузка Здравсити"):
+        st.caption("Сначала проверяем сайт. Для недоступных карточек можно загрузить публичные цены и наличие "
+                   "по Москве из согласованной выгрузки за сегодня. Отзывы и фотографии требуют доступа к карточке.")
+        st.download_button("Скачать шаблон CSV", partner_template(CATALOG), "zdravcity_template.csv", "text/csv")
+        st.caption("Оставьте нужные товары. Укажите observed_at с часовым поясом, availability (in_stock, "
+                   "out_of_stock или unknown) и цену упаковки price_rub. Для out_of_stock оставьте цену пустой.")
+        feed = st.file_uploader("Согласованная выгрузка за сегодня", type=["csv"])
     st.caption("Сбор выполняется для всего каталога и может занять несколько минут.")
     if st.button("Собрать свежие данные", type="primary"):
         try:
             with st.spinner("Собираю цены, отзывы, промо и материалы…"):
                 collected = run_collection(DATA_DIR, api_key=api_key, use_api=use_api,
-                                           include_internet=include_internet)
+                                           include_internet=include_internet,
+                                           partner_feed=feed.getvalue() if feed is not None else None)
             st.session_state["pending_report"] = collected["path"]
             st.session_state["collection_result"] = collected
             st.rerun()
@@ -305,6 +314,11 @@ with summary_tab:
 
 with price_tab:
     current = ensure_prices(filters(data("Проверки")))
+    if {"Площадка", "Диагностика"} <= set(current):
+        denied = (current["Площадка"] == "Здравсити") & current["Диагностика"].fillna("").str.startswith("HTTP 403")
+        if denied.any():
+            st.warning(f"Здравсити вернул HTTP 403 для {int(denied.sum())} карточек в этой выборке. "
+                       "Подробности — в столбце «Диагностика». Резервный CSV можно выбрать в боковой панели перед сбором.")
     facts = direct_prices(current)
     historic = direct_prices(ensure_prices(filters(data("История"))))
     measures = st.columns(3)
@@ -321,7 +335,7 @@ with price_tab:
     st.subheader("История цен")
     if not historic.empty:
         historic = historic.dropna(subset=["Время МСК"])
-        historic["Серия"] = historic["Площадка"] + " · " + historic["Товар"] + " · " + historic["Город"]
+        historic["Серия"] = historic["Площадка"] + " · " + historic["Товар"] + " · " + historic["Город"] + " · " + historic["Канал"]
         if not historic.empty:
             visual = historic[["Время МСК", "Цена за уп.", "Серия", "Товар", "Площадка", "Город"]].rename(
                 columns={"Время МСК": "observed", "Цена за уп.": "amount"}

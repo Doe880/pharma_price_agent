@@ -59,7 +59,7 @@ def build_payload(heading, selected_skus, city, frames, internet=None):
         if columns <= set(prices):
             available = prices[
                 (prices["Тип цены"] == "Публичная") & (prices["Наличие"] == "Доступен к заказу")
-                & (prices["Канал"] == "Сайт") & prices["Цена за уп."].notna()
+                & prices["Канал"].isin(["Сайт", "Выгрузка Здравсити"]) & prices["Цена за уп."].notna()
             ]
     reviews = frames.get("Отзывы по темам", pd.DataFrame())
     unique_reviews = reviews.drop_duplicates("SKU") if "SKU" in reviews else pd.DataFrame()
@@ -72,7 +72,7 @@ def build_payload(heading, selected_skus, city, frames, internet=None):
             "проверок": len(prices), "публичных_в_наличии": len(available),
             "статусы": counts(prices, "Наличие"),
             "предложения": records(available, [
-                "Препарат", "Форма", "Дозировка", "Шт.", "Площадка", "Город", "Цена за уп.", "Время МСК"
+                "Препарат", "Форма", "Дозировка", "Шт.", "Площадка", "Город", "Канал", "Цена за уп.", "Время МСК"
             ]),
         },
         "отзывы": {
