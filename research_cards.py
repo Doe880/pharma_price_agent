@@ -4,6 +4,7 @@ import json
 import re
 import warnings
 from datetime import date, datetime
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
@@ -58,14 +59,27 @@ def inspect_document(raw, card):
     return document, matches[0]
 
 
+def archived_zdravcity_reviews(day):
+    archive = Path(__file__).resolve().parent / "example" / "zdravcity_reviews.json"
+    sample = json.loads(archive.read_text(encoding="utf-8"))
+    if day < date.fromisoformat(sample["collected_on"]):
+        return []
+    return sample["reviews"]
+
+
 def get_reviews(document, item, card, url, day, limit):
     raw = item.get("review", [])
     raw = raw if isinstance(raw, list) else [raw]
     if card["source"] == "Здравсити":
         stored = document.xpath('//script[@id="__NEXT_DATA__"]/text()')
         if stored:
-            product = json.loads(stored[0]).get("props", {}).get("pageProps", {}).get("productV2", {})
-            raw = product.get("reviews", [])
+            try:
+                product = json.loads(stored[0])["props"]["pageProps"]["productV2"]
+            except (ValueError, KeyError, TypeError):
+                product = None
+            additional = product.get("reviews") if isinstance(product, dict) else None
+            if isinstance(additional, list):
+                raw = [*raw, *additional]
     prepared = {}
     for row in raw:
         if not isinstance(row, dict):

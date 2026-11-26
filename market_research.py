@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from lxml import etree
 
 from research_ai import CONTACTS, MECHANICS, TOPICS, Luna
-from research_cards import audit_cards, digest, get_reviews, inspect_document, promo_items
+from research_cards import archived_zdravcity_reviews, audit_cards, digest, get_reviews, inspect_document, promo_items
 from research_visibility import prepare_visibility, visibility_report
 
 
@@ -199,6 +199,9 @@ def run_research(catalog, pages, database, day, no_ai, setup, fetch_page):
     reviews, promos, parsed, diagnostics = read_retail_cards(
         catalog, pages, day, config["review_limit_per_card"], fetch_page
     )
+    for archived in archived_zdravcity_reviews(day):
+        if archived["sku"] in catalog["products"]:
+            reviews.setdefault(archived["id"], archived)
     checked = {(source, sku) for module, source, sku, message, _ in diagnostics
                if module == "Промо" and message.startswith("В карточке")}
     with closing(sqlite3.connect(database)) as connection, connection:

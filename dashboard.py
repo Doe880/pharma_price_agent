@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from dashboard_collection import partner_template, run_collection
 from price_history import last_zdravcity_checks
+from research_cards import archived_zdravcity_reviews
 from product_utils import product_label
 from internet_dashboard import render as render_internet, load_report as load_internet_report
 from internet_sources import brand_mentions
@@ -200,7 +201,7 @@ with st.sidebar:
 collection_result = st.session_state.pop("collection_result", None)
 if collection_result:
     if collection_result["partial"]:
-        st.warning("Новый отчёт готов. Часть аптечных карточек не загрузилась — смотрите «Диагностика» и таблицу проверок.")
+        st.warning("Новый отчёт готов. Часть аптечных карточек не загрузилась — см. таблицу «Все проверки и ссылки» на вкладке «Цены».")
     else:
         st.success("Новый отчёт готов и открыт. Проверки отдельных интернет-источников доступны во вкладке «Интернет».")
 reports = sorted(DATA_DIR.glob("prices_*.xlsx"), key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
@@ -242,8 +243,8 @@ if not selected_skus:
     st.info("Выберите хотя бы один товар в боковой панели.")
     st.stop()
 
-summary_tab, price_tab, review_tab, visibility_tab, audit_tab, promo_tab, internet_tab, check_tab = st.tabs(
-    ["ИИ-сводка", "Цены", "Отзывы", "Видимость", "Аудит карточек", "Промо", "Интернет", "Диагностика"]
+summary_tab, price_tab, review_tab, audit_tab, promo_tab, internet_tab = st.tabs(
+    ["ИИ-сводка", "Цены", "Отзывы", "Аудит карточек", "Промо", "Интернет"]
 )
 
 with summary_tab:
@@ -316,6 +317,23 @@ with summary_tab:
 with price_tab:
     current = ensure_prices(filters(data("Проверки")))
     history = ensure_prices(filters(data("История")))
+    facts = direct_prices(current)
+    historic = direct_prices(history)
+    measures = st.columns(3)
+    measures[0].metric("Карточек проверено", len(current))
+    measures[1].metric("Публичных цен в наличии", len(facts))
+    measures[2].metric("Аптек с публичной ценой", facts["Площадка"].nunique() if len(facts) else 0)
+    st.subheader("Цены аптек в выбранном отчёте")
+    if not current.empty:
+        table(current[["Площадка", "Товар", "Цена за уп.", "Цена за шт.", "Наличие", "Тип цены",
+                       "Город", "Время МСК", "Канал", "Карточка"]].sort_values(["Товар", "Площадка"]))
+    st.subheader("Цена за упаковку")
+    if len(facts):
+        frame = facts.assign(**{"Витрина": facts["Площадка"] + " · " + facts["Город"]}) if city == "Все города" else facts
+        series = "Витрина" if city == "Все города" else "Площадка"
+        chart(grouped_bars(frame, "Товар", "Цена за уп.", series, ".2f"))
+    else:
+        st.info("В этой выборке нет подтверждённых публичных цен с наличием.")
     if {"Площадка", "Диагностика"} <= set(current):
         denied = (current["Площадка"] == "Здравсити") & current["Диагностика"].fillna("").str.startswith("HTTP 403")
         if denied.any():
@@ -324,23 +342,8 @@ with price_tab:
             reference = pd.read_csv(EXAMPLE_DIR / "zdravcity_2026-11-26.csv")
             previous = last_zdravcity_checks(current.loc[denied], history, reference)
             if not previous.empty:
-                st.subheader("Последняя успешная проверка Здравсити до отказа")
-                st.caption("Цена и наличие указаны на время наблюдения по Москве. "
-                           "Текущие показатели рассчитываются отдельно.")
-                table(previous)
-    facts = direct_prices(current)
-    historic = direct_prices(history)
-    measures = st.columns(3)
-    measures[0].metric("Карточек проверено", len(current))
-    measures[1].metric("Публичных цен в наличии", len(facts))
-    measures[2].metric("Аптек с публичной ценой", facts["Площадка"].nunique() if len(facts) else 0)
-    st.subheader("Цена за упаковку")
-    if len(facts):
-        frame = facts.assign(**{"Витрина": facts["Площадка"] + " · " + facts["Город"]}) if city == "Все города" else facts
-        series = "Витрина" if city == "Все города" else "Площадка"
-        chart(grouped_bars(frame, "Товар", "Цена за уп.", series, ".2f"))
-    else:
-        st.info("В этой выборке нет подтверждённых публичных цен с наличием.")
+                with st.expander("Последняя успешная проверка Здравсити до отказа"):
+                    table(previous)
     st.subheader("История цен")
     if not historic.empty:
         historic = historic.dropna(subset=["Время МСК"])
@@ -367,14 +370,32 @@ with price_tab:
                 st.caption("По одному замеру на серию. Линии появятся после следующих проверок.")
     else:
         st.caption("История появляется после первого успешного сбора.")
-    with st.expander("Все проверки и ссылки", expanded=True):
+    with st.expander("Все проверки и ссылки"):
         table(current)
 
 with review_tab:
-    texts = filters(data("Тексты отзывов"), geo=False)
     st.subheader("Тексты отзывов покупателей")
+    texts = data("Тексты отзывов")
+    checks = data("Проверки")
+    times = pd.to_datetime(checks.get("Время МСК", pd.Series(dtype="datetime64[ns]")), errors="coerce").dropna()
+    if not times.empty:
+        archive = pd.DataFrame([
+            {"Бренд": PRODUCTS[row["sku"]]["brand"], "SKU": row["sku"], "Аптека": row["source"],
+             "Дата отзыва": row["date"], "Текст отзыва": row["body"], "Темы": "",
+             "Статус разметки": "Архивная выборка", "Источник": row["url"]}
+            for row in archived_zdravcity_reviews(times.max().date()) if row["sku"] in PRODUCTS
+        ])
+        if not archive.empty:
+            texts = pd.concat([texts, archive], ignore_index=True).drop_duplicates(
+                ["SKU", "Аптека", "Дата отзыва", "Текст отзыва"], keep="first")
+    texts = filters(texts, geo=False)
+    filtered_checks = filters(checks)
+    if {"Площадка", "Диагностика"} <= set(filtered_checks):
+        blocked = filtered_checks["Диагностика"].fillna("").str.startswith("HTTP 403")
+        if (filtered_checks["Площадка"].eq("Здравсити") & blocked).any():
+            st.caption("Часть карточек Здравсити вернула HTTP 403. Для них доступны только ранее собранные отзывы.")
     if texts.empty:
-        st.info("В этом отчёте ещё нет полных текстов отзывов. Сформируйте новый отчёт обновлённым агентом.")
+        st.info("По выбранным товарам доступных текстов отзывов пока нет.")
     else:
         source_options = sorted(texts["Аптека"].dropna().unique())
         review_sources = st.multiselect("Аптеки с отзывами", source_options, default=source_options)
@@ -382,7 +403,8 @@ with review_tab:
         texts = texts[texts["Аптека"].isin(review_sources)]
         if review_search:
             texts = texts[texts["Текст отзыва"].fillna("").str.contains(review_search, case=False, regex=False)]
-        st.caption(f"Отзывов в таблице: {len(texts)}. Одна строка соответствует одному собранному отзыву.")
+        by_source = texts["Аптека"].value_counts()
+        st.caption(" · ".join(f"{name}: {by_source.get(name, 0)}" for name in review_sources))
         table(texts.drop(columns=["SKU", "Бренд"]), row_height=100)
     st.subheader("Анализ тем")
     reviews = filters(data("Отзывы по темам"), geo=False)
@@ -391,7 +413,7 @@ with review_tab:
     else:
         counts = reviews.drop_duplicates("SKU")
         left, right = st.columns(2)
-        left.metric("Собрано отзывов", int(counts["Всего в базе"].fillna(0).sum()))
+        left.metric("Отзывов в анализе тем отчёта", int(counts["Всего в базе"].fillna(0).sum()))
         right.metric("Размечено Luna", int(counts["Размечено"].fillna(0).sum()))
         st.caption("Выборка отзывов относится к карточкам товара. Один отзыв может содержать несколько тем.")
         labeled = reviews.dropna(subset=["Доля"])
@@ -403,25 +425,6 @@ with review_tab:
         table(reviews)
         with st.expander("Отзывы и цитаты"):
             table(filters(data("Выборка отзывов"), geo=False))
-
-with visibility_tab:
-    visibility = filters(data("Видимость"))
-    positions = filters(data("Позиции поиска"))
-    if visibility.empty or visibility["Проверено"].fillna(0).sum() == 0:
-        st.info("Проверенных позиций пока нет. Импортируйте CSV или сохранённый HTML выдачи командой агента.")
-    else:
-        st.subheader("Доля попаданий в топ‑10")
-        observed = visibility.dropna(subset=["Доля топ‑10"])
-        if city == "Все города":
-            observed = observed.assign(**{"Витрина": observed["Аптека"] + " · " + observed["Город"]})
-        if not observed.empty:
-            chart(grouped_bars(observed, "Товар", "Доля топ‑10", "Витрина" if city == "Все города" else "Аптека",
-                               ".0%", [0, 1]))
-    table(visibility)
-    with st.expander("Позиции по запросам"):
-        table(positions)
-    with st.expander("Потери видимости"):
-        table(filters(data("Потери видимости")), "В этом срезе нет зафиксированных потерь видимости.")
 
 with audit_tab:
     audit = filters(data("Аудит карточек"), geo=False)
@@ -472,13 +475,6 @@ with promo_tab:
             chart(grouped_bars(observed, "Товар", "Дней с промо", "Витрина" if city == "Все города" else "Аптека",
                                "d"), height=230)
     table(frequency)
-
-with check_tab:
-    log = data("Диагностика исследования")
-    if not log.empty and "SKU" in log:
-        log = log[log["SKU"].isna() | (log["SKU"] == "") | log["SKU"].isin(selected_skus)]
-    table(log, "В этом отчёте нет отдельного листа диагностики исследований.")
-
 
 with internet_tab:
     render_internet(DATA_DIR, selected_brands, api_key, table, chart)
