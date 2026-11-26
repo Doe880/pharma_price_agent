@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -70,6 +71,30 @@ class ZdravcityFeedTests(unittest.TestCase):
         self.assertIn("HTTP 403", row["error"])
         self.assertIn("abc-123", row["error"])
         self.assertNotIn("sensitive", row["error"])
+
+    def test_configured_feed_requested_once_after_denial_only(self):
+        imports = agent.load_feed(self.csv_file(self.row), self.catalog, self.day)
+        failed = dict(imports[0], channel="site", state="error", error="HTTP 403", kopecks=None)
+        with patch.dict(os.environ, {"ZDRAVCITY_FEED_URL": "https://example.org/feed",
+                                     "ZDRAVCITY_FEED_TOKEN": "secret"}), patch.object(agent, "build_opener") as opener:
+            opener.return_value.open.return_value = io.BytesIO(self.csv_file(self.row).read_bytes())
+            self.assertEqual(agent.configured_feed([dict(failed, error="")], [], self.catalog, self.day), [])
+            self.assertEqual(agent.configured_feed([failed], imports, self.catalog, self.day), [])
+            opener.assert_not_called()
+            result = agent.configured_feed([failed], [], self.catalog, self.day)
+            self.assertEqual(result, imports)
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+            self.assertEqual(agent.apply_feed([failed], result)[0]["kopecks"], 1234)
+
+    def test_bad_remote_feed_keeps_failure_and_hides_credentials(self):
+        failed = {"source": agent.PARTNER, "sku": self.row["sku"], "error": "HTTP 403"}
+        with patch.dict(os.environ, {"ZDRAVCITY_FEED_URL": "https://example.org/?secret=q"}), \
+                patch.object(agent, "build_opener") as opener:
+            opener.return_value.open.return_value = io.BytesIO(b"<html>oops</html>")
+            self.assertEqual(agent.configured_feed([failed], [], self.catalog, self.day), [])
+        self.assertIn("выгрузка недоступна", failed["error"])
+        self.assertNotIn("secret", failed["error"])
 
     def test_upload_is_validated_and_removed_after_collection(self):
         def collect(command, **kwargs):

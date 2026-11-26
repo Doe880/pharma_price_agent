@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from dotenv import load_dotenv
 
 from dashboard_collection import partner_template, run_collection
+from price_history import last_zdravcity_checks
 from product_utils import product_label
 from internet_dashboard import render as render_internet, load_report as load_internet_report
 from internet_sources import brand_mentions
@@ -314,13 +315,21 @@ with summary_tab:
 
 with price_tab:
     current = ensure_prices(filters(data("Проверки")))
+    history = ensure_prices(filters(data("История")))
     if {"Площадка", "Диагностика"} <= set(current):
         denied = (current["Площадка"] == "Здравсити") & current["Диагностика"].fillna("").str.startswith("HTTP 403")
         if denied.any():
-            st.warning(f"Здравсити вернул HTTP 403 для {int(denied.sum())} карточек в этой выборке. "
-                       "Подробности — в столбце «Диагностика». Резервный CSV можно выбрать в боковой панели перед сбором.")
+            st.warning(f"Здравсити отклонил запросы по {int(denied.sum())} карточкам. "
+                       "Для получения цен за сегодня можно загрузить согласованную выгрузку в боковой панели.")
+            reference = pd.read_csv(EXAMPLE_DIR / "zdravcity_2026-11-26.csv")
+            previous = last_zdravcity_checks(current.loc[denied], history, reference)
+            if not previous.empty:
+                st.subheader("Последняя успешная проверка Здравсити до отказа")
+                st.caption("Цена и наличие указаны на время наблюдения по Москве. "
+                           "Текущие показатели рассчитываются отдельно.")
+                table(previous)
     facts = direct_prices(current)
-    historic = direct_prices(ensure_prices(filters(data("История"))))
+    historic = direct_prices(history)
     measures = st.columns(3)
     measures[0].metric("Карточек проверено", len(current))
     measures[1].metric("Публичных цен в наличии", len(facts))

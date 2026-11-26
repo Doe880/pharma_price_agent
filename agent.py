@@ -1,5 +1,6 @@
 import argparse
 import csv
+import io
 import json
 import os
 import re
@@ -11,11 +12,12 @@ from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
+from http.client import HTTPException
 from pathlib import Path
 from statistics import median
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from dotenv import load_dotenv
 
@@ -190,50 +192,96 @@ def collect(catalog, snapshots=None):
 
 
 def load_feed(path, catalog, day):
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        return read_feed(stream, catalog, day)
+
+
+def read_feed(stream, catalog, day):
     rows = []
     identities = set()
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        header = stream.readline()
-        stream.seek(0)
-        reader = csv.DictReader(stream, delimiter=";" if ";" in header else ",")
-        fields = reader.fieldnames or []
-        if not set(FEED_FIELDS).issubset(fields) or len(fields) != len(set(fields)):
-            raise ValueError("Проверьте обязательные столбцы и повторы заголовков CSV по шаблону.")
-        partner_cards = {card["sku"]: card["url"] for card in catalog["cards"] if card["source"] == PARTNER}
-        for number, row in enumerate(reader, 2):
-            try:
-                source, sku, city, seller, url, kind, state, timestamp, raw_price = (
-                    row[key].strip() for key in FEED_FIELDS
-                )
-                link = urlsplit(url)
-                if None in row:
-                    raise ValueError("Лишние значения в строке CSV")
-                if source == PARTNER and (seller != PARTNER or kind != "public" or url != partner_cards.get(sku)):
-                    raise ValueError("Для Здравсити нужны публичное предложение площадки и URL этого SKU из каталога")
-                hosts = {"zdravcity.ru"} if source == PARTNER else SOURCES.get(source, set())
-                if (sku not in catalog["products"] or city != catalog["city"]
-                        or kind not in TYPES or state not in {"in_stock", "out_of_stock", "unknown"}
-                        or not seller or link.scheme != "https" or link.hostname not in hosts
-                        or link.netloc != link.hostname or not link.path.strip("/")):
-                    raise ValueError("Неподдерживаемый источник, SKU, город, продавец, URL или статус")
-                when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-                if when.tzinfo is None or when.astimezone(MSK).date() != day:
-                    raise ValueError("Нужна отметка времени с часовым поясом за текущую дату Москвы")
-                if when > datetime.now(timezone.utc) + timedelta(minutes=5):
-                    raise ValueError("Время наблюдения находится в будущем")
-                price = kopecks(raw_price) if raw_price else None
-                if (state == "in_stock" and price is None) or (state == "out_of_stock" and price is not None):
-                    raise ValueError("Цена не согласуется с наличием")
-                identity = source, sku, city, seller, kind
-                if identity in identities:
-                    raise ValueError("Дубликат источника, SKU, города, продавца и типа цены")
-                identities.add(identity)
-            except (AttributeError, KeyError, ValueError) as exc:
-                raise ValueError(f"CSV, строка {number}. {exc}") from exc
-            rows.append(observation(source, sku, city, seller, url, when.astimezone(timezone.utc)
-                                    .isoformat(timespec="seconds"), kind, price, state,
-                                    "partner" if source == PARTNER else "feed"))
+    header = stream.readline()
+    stream.seek(0)
+    reader = csv.DictReader(stream, delimiter=";" if ";" in header else ",")
+    fields = reader.fieldnames or []
+    if not set(FEED_FIELDS).issubset(fields) or len(fields) != len(set(fields)):
+        raise ValueError("Проверьте обязательные столбцы и повторы заголовков CSV по шаблону.")
+    partner_cards = {card["sku"]: card["url"] for card in catalog["cards"] if card["source"] == PARTNER}
+    for number, row in enumerate(reader, 2):
+        try:
+            source, sku, city, seller, url, kind, state, timestamp, raw_price = (
+                row[key].strip() for key in FEED_FIELDS
+            )
+            link = urlsplit(url)
+            if None in row:
+                raise ValueError("Лишние значения в строке CSV")
+            if source == PARTNER and (seller != PARTNER or kind != "public" or url != partner_cards.get(sku)):
+                raise ValueError("Для Здравсити нужны публичное предложение площадки и URL этого SKU из каталога")
+            hosts = {"zdravcity.ru"} if source == PARTNER else SOURCES.get(source, set())
+            if (sku not in catalog["products"] or city != catalog["city"]
+                    or kind not in TYPES or state not in {"in_stock", "out_of_stock", "unknown"}
+                    or not seller or link.scheme != "https" or link.hostname not in hosts
+                    or link.netloc != link.hostname or not link.path.strip("/")):
+                raise ValueError("Неподдерживаемый источник, SKU, город, продавец, URL или статус")
+            when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            if when.tzinfo is None or when.astimezone(MSK).date() != day:
+                raise ValueError("Нужна отметка времени с часовым поясом за текущую дату Москвы")
+            if when > datetime.now(timezone.utc) + timedelta(minutes=5):
+                raise ValueError("Время наблюдения находится в будущем")
+            price = kopecks(raw_price) if raw_price else None
+            if (state == "in_stock" and price is None) or (state == "out_of_stock" and price is not None):
+                raise ValueError("Цена не согласуется с наличием")
+            identity = source, sku, city, seller, kind
+            if identity in identities:
+                raise ValueError("Дубликат источника, SKU, города, продавца и типа цены")
+            identities.add(identity)
+        except (AttributeError, KeyError, ValueError) as exc:
+            raise ValueError(f"CSV, строка {number}. {exc}") from exc
+        rows.append(observation(source, sku, city, seller, url, when.astimezone(timezone.utc)
+                                .isoformat(timespec="seconds"), kind, price, state,
+                                "partner" if source == PARTNER else "feed"))
     return rows
+
+
+class FeedRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def configured_feed(direct, imports, catalog, day):
+    address = os.getenv("ZDRAVCITY_FEED_URL", "").strip()
+    covered = {row["sku"] for row in imports if row["channel"] == "partner"}
+    denied = [row for row in direct if row["source"] == PARTNER and row["error"].startswith("HTTP 403")
+              and row["sku"] not in covered]
+    if not address or not denied:
+        return []
+    try:
+        link = urlsplit(address)
+        if link.scheme != "https" or not link.hostname or link.username is not None or link.password is not None:
+            raise ValueError("Нужна HTTPS-ссылка на выгрузку")
+        headers = {"Accept": "text/csv", "User-Agent": USER_AGENT}
+        token = os.getenv("ZDRAVCITY_FEED_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        with build_opener(FeedRedirectHandler()).open(Request(address, headers=headers), timeout=20) as response:
+            raw = response.read(2_000_001)
+        if len(raw) > 2_000_000:
+            raise ValueError("CSV превышает 2 МБ")
+        rows = read_feed(io.StringIO(raw.decode("utf-8-sig"), newline=""), catalog, day)
+        if not rows or any(row["channel"] != "partner" for row in rows):
+            raise ValueError("Нужны строки согласованной выгрузки Здравсити")
+        by_sku = {row["sku"]: row for row in rows}
+        for row in denied:
+            if row["sku"] not in by_sku:
+                row["error"] += " · для SKU нет строки в выгрузке"
+        return [by_sku[row["sku"]] for row in denied if row["sku"] in by_sku]
+    except HTTPError as exc:
+        detail = f"HTTP {exc.code}"
+        exc.close()
+    except (OSError, HTTPException, ValueError, csv.Error):
+        detail = "проверьте доступ, формат CSV и дату наблюдений"
+    for row in denied:
+        row["error"] += f" · выгрузка недоступна ({detail})"
+    return []
 
 
 def apply_feed(direct, imports):
@@ -493,6 +541,7 @@ def main():
     args.data_dir.mkdir(parents=True, exist_ok=True)
     snapshots = {} if not args.prices_only else None
     direct = collect(catalog, snapshots)
+    imports.extend(configured_feed(direct, imports, catalog, day))
     if datetime.now(MSK).date() != day:
         parser.error("Во время сбора сменилась дата Москвы. Запустите сбор повторно.")
     current = apply_feed(direct, imports)
